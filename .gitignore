@@ -1,0 +1,14 @@
+# Environment variables - never commit these
+.env
+.env.local
+
+# Dependencies
+node_modules/
+interview-frontend/node_modules/
+
+# Data
+sessions.json
+interview.db
+
+# macOS
+.DS_Store

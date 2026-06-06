@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:3001'
+const BASE = import.meta.env.PROD ? '' : 'http://localhost:3001'
 
 export async function startSession(caseType, domain) {
   const res = await fetch(`${BASE}/start`, {
@@ -23,6 +23,36 @@ export async function sendMessage(sessionId, message) {
 export async function getProgress() {
   const res = await fetch(`${BASE}/progress`)
   if (!res.ok) throw new Error(`Progress failed: ${res.status}`)
+  return res.json()
+}
+
+export async function getSessions() {
+  const res = await fetch(`${BASE}/sessions`)
+  if (!res.ok) throw new Error(`Sessions failed: ${res.status}`)
+  return res.json()
+}
+
+export async function getSession(id) {
+  const res = await fetch(`${BASE}/sessions/${id}`)
+  if (!res.ok) throw new Error(`Session failed: ${res.status}`)
+  return res.json()
+}
+
+export async function getResume() {
+  const res = await fetch(`${BASE}/resume`)
+  if (!res.ok) throw new Error(`Resume fetch failed: ${res.status}`)
+  return res.json()
+}
+
+export async function uploadResume(formData) {
+  const res = await fetch(`${BASE}/resume`, { method: 'POST', body: formData })
+  if (!res.ok) throw new Error(`Resume upload failed: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteResume() {
+  const res = await fetch(`${BASE}/resume`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`Resume delete failed: ${res.status}`)
   return res.json()
 }
 
