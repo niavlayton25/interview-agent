@@ -440,7 +440,7 @@ app.post("/tts", async (req, res) => {
 
 // SPA fallback — serve index.html for any non-API route
 if (require("fs").existsSync(FRONTEND_DIST)) {
-  app.get("/{*path}", (_req, res) => res.sendFile(path.join(FRONTEND_DIST, "index.html")));
+  app.use((_req, res) => res.sendFile(path.join(FRONTEND_DIST, "index.html")));
 }
 
 // ─── Start server ─────────────────────────────────────────────────────────────
