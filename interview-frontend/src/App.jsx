@@ -2,6 +2,7 @@ import { useState } from 'react'
 import CaseTypeSelector from './components/CaseTypeSelector.jsx'
 import InterviewRoom from './components/InterviewRoom.jsx'
 import ProgressView from './components/ProgressView.jsx'
+import { stopCurrentAudio } from './audioManager.js'
 
 export default function App() {
   const [view, setView] = useState('selector') // selector | interview | progress
@@ -16,6 +17,7 @@ export default function App() {
   }
 
   function handleBack() {
+    stopCurrentAudio()
     setView('selector')
     setCaseType(null)
   }
@@ -32,7 +34,7 @@ export default function App() {
         </button>
         <button
           className={`nav-btn ${view === 'progress' ? 'active' : ''}`}
-          onClick={() => setView(view === 'progress' ? (caseType ? 'interview' : 'selector') : 'progress')}
+          onClick={() => { stopCurrentAudio(); setView(view === 'progress' ? (caseType ? 'interview' : 'selector') : 'progress') }}
         >
           {view === 'progress' ? '← Back' : 'Progress'}
         </button>

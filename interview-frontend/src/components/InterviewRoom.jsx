@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { startSession, sendMessage, speakText } from '../api.js'
+import { setCurrentAudio, clearCurrentAudio, stopCurrentAudio } from '../audioManager.js'
 
 function stripMarkdown(text) {
   return text
@@ -24,6 +25,7 @@ const STATUS_LABELS = {
   listening: 'Listening…',
   thinking: 'Thinking…',
   speaking: 'Speaking…',
+  unlocking: 'Tap to hear opening question',
 }
 
 export default function InterviewRoom({ caseType, domain }) {
@@ -38,6 +40,8 @@ export default function InterviewRoom({ caseType, domain }) {
   const audioRef = useRef(null)
   const transcriptEndRef = useRef(null)
   const phaseRef = useRef(phase)
+  const mountedRef = useRef(true)
+  const startGenRef = useRef(0)
 
   useEffect(() => { phaseRef.current = phase }, [phase])
 
@@ -50,12 +54,16 @@ export default function InterviewRoom({ caseType, domain }) {
     handleStart()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const speak = useCallback(async (text) => {
+  // accepts a Blob (pre-fetched) or a string (will fetch)
+  const speak = useCallback(async (blobOrText) => {
     try {
+      stopCurrentAudio()
       setPhase('speaking')
-      const blob = await speakText(text)
+      const blob = blobOrText instanceof Blob ? blobOrText : await speakText(blobOrText)
+      if (!mountedRef.current) return  // navigated away while fetching audio
       const url = URL.createObjectURL(blob)
       const audio = new Audio(url)
+      setCurrentAudio(audio)
       audioRef.current = audio
       await new Promise((resolve) => {
         audio.onended = resolve
@@ -63,25 +71,52 @@ export default function InterviewRoom({ caseType, domain }) {
         audio.play().catch(resolve)
       })
       URL.revokeObjectURL(url)
+      clearCurrentAudio()
       audioRef.current = null
     } catch {
       // TTS failed — text is already in transcript, just continue
     } finally {
-      setPhase('ready')
+      if (mountedRef.current) setPhase('ready')
     }
   }, [])
 
+  const pendingAudioRef = useRef(null)
+
   const handleStart = async () => {
+    const myGen = ++startGenRef.current
+    const isStale = () => myGen !== startGenRef.current || !mountedRef.current
+
     setError(null)
     setPhase('loading')
     try {
       const data = await startSession(caseType, domain)
+      if (isStale()) return
       setSessionId(data.sessionId)
       setMessages([{ role: 'assistant', text: data.message }])
-      await speak(data.message)
+      // Fetch audio but don't play yet — need a user gesture to unlock autoplay
+      try {
+        const blob = await speakText(data.message)
+        if (isStale()) return
+        pendingAudioRef.current = blob
+        setPhase('unlocking')
+      } catch {
+        if (!isStale()) setPhase('ready')
+      }
     } catch (err) {
-      setError('Could not reach the backend. Make sure interview_agent.js is running on port 3001.')
-      setPhase('idle')
+      if (!isStale()) {
+        setError('Could not reach the backend. Make sure interview_agent.js is running on port 3001.')
+        setPhase('idle')
+      }
+    }
+  }
+
+  const handleUnlock = async () => {
+    const blob = pendingAudioRef.current
+    pendingAudioRef.current = null
+    if (blob) {
+      await speak(blob)
+    } else {
+      setPhase('ready')
     }
   }
 
@@ -91,10 +126,8 @@ export default function InterviewRoom({ caseType, domain }) {
     if (phaseRef.current === 'thinking' || phaseRef.current === 'loading') return
 
     // Interrupt any playing audio
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current = null
-    }
+    stopCurrentAudio()
+    audioRef.current = null
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
@@ -166,7 +199,18 @@ export default function InterviewRoom({ caseType, domain }) {
     return () => window.removeEventListener('pointerup', handleGlobalPointerUp)
   }, [handleGlobalPointerUp])
 
-  const canSpeak = phase === 'ready' || phase === 'speaking'
+  // Stop all audio/recognition when navigating away
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      startGenRef.current++  // invalidate any in-flight handleStart
+      stopCurrentAudio()
+      recognitionRef.current?.stop()
+    }
+  }, [])
+
+  const canSpeak = phase === 'ready' || phase === 'speaking' || phase === 'unlocking'
   const isListening = phase === 'listening'
 
   return (
@@ -213,7 +257,14 @@ export default function InterviewRoom({ caseType, domain }) {
           {STATUS_LABELS[phase]}
         </div>
 
-        <button
+        {phase === 'unlocking' ? (
+          <button className="mic-btn" onClick={handleUnlock} aria-label="Play opening question">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        ) : (
+          <button
             className={`mic-btn ${isListening ? 'listening' : ''} ${phase === 'speaking' ? 'speaking' : ''}`}
             onPointerDown={handlePointerDown}
             disabled={phase === 'thinking' || phase === 'loading' || phase === 'idle'}
@@ -222,6 +273,7 @@ export default function InterviewRoom({ caseType, domain }) {
             <MicIcon />
             {isListening && <span className="pulse-ring" />}
           </button>
+        )}
       </div>
     </div>
   )
